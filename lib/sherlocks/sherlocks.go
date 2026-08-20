@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -16,13 +18,10 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-// getSherlockDownloadLink constructs and returns the download link for a specific Sherlock challenge.
+var metaRefreshURLPattern = regexp.MustCompile(`url=['"]?([^'">]+)['"]?`)
+
 func getDownloadLink(sherlockID string) (string, error) {
 	url := fmt.Sprintf("%s/sherlocks/%s/download_link", config.BaseHackTheBoxAPIURL, sherlockID)
-
-	// url := "https://www.hackthebox.com/api/v4/challenge/download/196"
-
-	// return url, nil
 
 	resp, err := utils.HtbRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -49,32 +48,71 @@ func getDownloadLink(sherlockID string) (string, error) {
 	return data.URL, nil
 }
 
+// getSherlockDownloadLink constructs and returns the download link for a specific Sherlock challenge.
+func resolveDownloadURL(redirectEndpointURL string) (string, error) {
+	resp, err := utils.HtbRequest(http.MethodGet, redirectEndpointURL, nil)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		location := resp.Header.Get("Location")
+		if location == "" {
+			return "", fmt.Errorf("error: redirect response (status %d) had no Location header", resp.StatusCode)
+		}
+		return location, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("error: unexpected status code %d while resolving download link", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	matches := metaRefreshURLPattern.FindSubmatch(body)
+	if len(matches) < 2 {
+		return "", fmt.Errorf("error: could not find redirect target in HTML response")
+	}
+	return html.UnescapeString(string(matches[1])), nil
+}
+
 // downloadFile downloads the Sherlock file from a given URL to a specified download path.
-func downloadFile(url string, downloadPath string) error {
-	resp, err := utils.HtbRequest(http.MethodGet, url, nil)
+func downloadFile(downloadLinkURL string, downloadPath string) error {
+	finalURL, err := resolveDownloadURL(downloadLinkURL)
+	if err != nil {
+		return err
+	}
+
+	config.GlobalConfig.Logger.Debug(fmt.Sprintf("Resolved final download URL: %s", finalURL))
+
+	resp, err := http.Get(finalURL)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Println("error: Status code:", resp.StatusCode)
-		return nil
+		return fmt.Errorf("error: unexpected status code %d while downloading file", resp.StatusCode)
 	}
 
 	outFile, err := os.Create(downloadPath)
 	if err != nil {
 		return err
 	}
-	defer outFile.Close()
 
 	_, err = io.Copy(outFile, resp.Body)
+	outFile.Close()
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Archive downloaded successfully. The password for unlock is: hacktheblue")
-	fmt.Println("")
+	fmt.Println("Archive downloaded successfully to:", downloadPath)
+	fmt.Println("The password for unlock is: hacktheblue")
+
 	return nil
 }
 
@@ -185,18 +223,18 @@ func GetGeneralInformations(sherlockID string, sherlockDownloadPath string) erro
 	info := utils.ParseJsonMessage(resp, "data").(map[string]interface{})
 
 	if sherlockDownloadPath != "" {
-		url, err := getDownloadLink(sherlockID)
+		downloadURL, err := getDownloadLink(sherlockID)
 		if err != nil {
 			return err
 		}
-		err = downloadFile(url, sherlockDownloadPath)
+		err = downloadFile(downloadURL, sherlockDownloadPath)
 		if err != nil {
 			return err
 		}
 	}
 
 	config.GlobalConfig.Logger.Debug(fmt.Sprintf("Informations: %v", info))
-	fmt.Println("Scenario :", info["scenario"])
+	fmt.Println("\nScenario :", info["scenario"])
 	fmt.Println("\nFile :", info["file_name"])
 	fmt.Println("File Size :", info["file_size"])
 	return nil
@@ -204,7 +242,7 @@ func GetGeneralInformations(sherlockID string, sherlockDownloadPath string) erro
 
 // SearchIDByName searches for a Sherlock challenge by name and returns its ID.
 func SearchIDByName(sherlockSearch string) (string, error) {
-	url := fmt.Sprintf("%s/sherlocks", config.BaseHackTheBoxAPIURL)
+	url := fmt.Sprintf("%s/sherlocks?keyword=%s", config.BaseHackTheBoxAPIURL, strings.ToLower(sherlockSearch))
 	resp, err := utils.HtbRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", err

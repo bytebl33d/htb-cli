@@ -71,11 +71,17 @@ var sherlocksCmd = &cobra.Command{
 				return
 			}
 			for _, task := range data.Tasks {
+				status := ""
 				if task.Completed {
-					fmt.Printf("\n%s (DONE) :\n%s\n\n", task.Title, task.Description)
-				} else {
-					fmt.Printf("\n%s :\n%s\n\n", task.Title, task.Description)
+					status = " (DONE)"
 				}
+
+				fmt.Printf("\n%s%s :\n%s\n", task.Title, status, task.Description)
+
+				if task.MaskedFlag != "" {
+					fmt.Printf("Format : %s\n", task.MaskedFlag)
+				}
+				fmt.Println()
 			}
 			return
 		}
