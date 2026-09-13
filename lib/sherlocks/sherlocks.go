@@ -117,7 +117,7 @@ func downloadFile(downloadLinkURL string, downloadPath string) error {
 }
 
 // submitTask sends a flag for a specific task of a Sherlock challenge and returns the server's response.
-func submitTask(sherlockID string, taskID string, flag string) (string, error) {
+func SubmitTask(sherlockID string, taskID string, flag string) (string, error) {
 	url := fmt.Sprintf("%s/sherlocks/%s/tasks/%s/flag", config.BaseHackTheBoxAPIURL, sherlockID, taskID)
 
 	body := map[string]string{
@@ -178,7 +178,7 @@ func GetTaskByID(sherlockID string, sherlockTaskID int, sherlockHint bool) error
 		config.GlobalConfig.Logger.Debug(fmt.Sprintf("Flag: %s", flag))
 		taskID := strconv.Itoa(sherlockData.Tasks[sherlockTaskID-1].ID)
 
-		message, err := submitTask(sherlockID, taskID, flag)
+		message, err := SubmitTask(sherlockID, taskID, flag)
 
 		if err != nil {
 			return err
