@@ -7,6 +7,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -242,8 +243,8 @@ func GetGeneralInformations(sherlockID string, sherlockDownloadPath string) erro
 
 // SearchIDByName searches for a Sherlock challenge by name and returns its ID.
 func SearchIDByName(sherlockSearch string) (string, error) {
-	url := fmt.Sprintf("%s/sherlocks?keyword=%s", config.BaseHackTheBoxAPIURL, strings.ToLower(sherlockSearch))
-	resp, err := utils.HtbRequest(http.MethodGet, url, nil)
+	apiURL := fmt.Sprintf("%s/sherlocks?keyword=%s", config.BaseHackTheBoxAPIURL, url.QueryEscape(strings.ToLower(sherlockSearch)))
+	resp, err := utils.HtbRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -268,6 +269,10 @@ func SearchIDByName(sherlockSearch string) (string, error) {
 	}
 
 	matches := fuzzy.Find(sherlockSearch, names)
+
+	if len(matches) == 0 && parsedData.Message != "" {
+		return "", fmt.Errorf("API error: %s", parsedData.Message)
+	}
 
 	for _, match := range matches {
 		matchedNameID := nameIDs[match.Index]
